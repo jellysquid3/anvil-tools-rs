@@ -1,0 +1,17 @@
+[package]
+name = "anvil-tools-rs"
+version = "0.1.0"
+authors = ["jellysquid3 <jellysquid3@users.noreply.github.com>"]
+edition = "2018"
+
+[dependencies]
+flate2 = "1.0.20"
+mapr = "0.8.0"
+byteorder = "1.4.3"
+hematite-nbt = { version = "0.5.1", default-features = false }
+clap = { version = "2.33.3", default-features = false }
+indicatif = { version = "0.15.0", default-features = false }
+rayon = "1.5.0"
+
+[patch.crates-io]
+hematite-nbt = { path = './modules/hematite_nbt' }

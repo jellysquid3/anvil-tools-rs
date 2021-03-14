@@ -9,7 +9,7 @@ use rayon::prelude::*;
 mod region;
 
 fn main() -> Result<(), io::Error> {
-    let matches = App::new("regiontools")
+    let matches = App::new("anviltools")
         .subcommand(SubCommand::with_name("strip-cached-data")
             .about("Strips cached data from region files")
             .arg(Arg::with_name("input-dir")
@@ -19,7 +19,7 @@ fn main() -> Result<(), io::Error> {
         )
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("strip") {
+    if let Some(matches) = matches.subcommand_matches("strip-cached-data") {
         return strip_files(matches.value_of("input-dir").unwrap(),
                     matches.value_of("output-dir").unwrap());
     }

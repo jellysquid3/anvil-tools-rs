@@ -1,8 +1,8 @@
-use zstd::Decoder;
-use zstd::stream::Encoder;
 use std::fs::File;
 
 use serde::{Serialize, Deserialize};
+use xz2::bufread::XzDecoder;
+use xz2::write::XzEncoder;
 use std::fs;
 use std::path::Path;
 use std::io::{self, BufWriter, prelude::*, BufReader};
@@ -28,8 +28,8 @@ pub struct PackOptions {
     #[clap(long, about = "Output path for the archive file")]
     output_file: String,
     
-    #[clap(long, default_value = "15", about = "Compression level used for creating the archive file")]
-    compression_level: i32,
+    #[clap(long, default_value = "7", about = "Compression level used for creating the archive file")]
+    compression_level: u32,
 
     #[clap(long, default_value = "0", about = "Number of threads to be used for compression (0 = single-threaded)")]
     threads: u32,
@@ -40,8 +40,7 @@ pub struct PackOptions {
 
 #[derive(Serialize, Deserialize)]
 struct PackHeader {
-    region_count: u32,
-    version: u32
+    region_count: u32
 }
 
 
@@ -66,15 +65,14 @@ pub fn pack_files(options: &PackOptions) -> Result<(), io::Error> {
         panic!("Input directory does not exist");
     }
 
-    let mut writer = BufWriter::new(File::create(output_path)?);
-    let mut encoder = Encoder::new(&mut writer, options.compression_level)?;
-    encoder.multithread(options.threads)?;
+    let writer = BufWriter::new(File::create(output_path)?);
+    let mut encoder = XzEncoder::new(writer, options.compression_level);
 
     let entries: Vec<fs::DirEntry> = fs::read_dir(input_path)?
         .into_iter()
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    rmp_serde::encode::write(encoder.by_ref(), &PackHeader { region_count: entries.len() as u32, version: 1 })
+    rmp_serde::encode::write(encoder.by_ref(), &PackHeader { region_count: entries.len() as u32 })
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
 
     let progress = MultiProgress::new();
@@ -103,7 +101,7 @@ pub fn pack_files(options: &PackOptions) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn pack_file<T>(path: &Path, encoder: &mut Encoder<T>, progress: &MultiProgress, options: &PackOptions) -> Result<(), io::Error>
+fn pack_file<T>(path: &Path, encoder: &mut XzEncoder<T>, progress: &MultiProgress, options: &PackOptions) -> Result<(), io::Error>
     where T: io::Write
 {
     let (x, z) = RegionFile::parse_name(&path.file_name().map(|f| f.to_string_lossy()).unwrap());
@@ -162,7 +160,7 @@ pub fn unpack_files(options: &UnpackOptions) -> Result<(), io::Error> {
     }
 
     let mut reader = BufReader::new(File::open(input_path)?);
-    let mut decoder = Decoder::new(&mut reader)?;
+    let mut decoder = XzDecoder::new(&mut reader);
 
     let pack_header: PackHeader = rmp_serde::decode::from_read(decoder.by_ref())
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
@@ -182,7 +180,7 @@ pub fn unpack_files(options: &UnpackOptions) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn unpack_file<T>(dir: &Path, decoder: &mut Decoder<T>, progress: &MultiProgress) -> Result<(), io::Error>
+fn unpack_file<T>(dir: &Path, decoder: &mut XzDecoder<T>, progress: &MultiProgress) -> Result<(), io::Error>
     where T: io::BufRead
 {
     let region_entry: RegionEntry = rmp_serde::decode::from_read(decoder.by_ref())

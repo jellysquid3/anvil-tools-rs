@@ -1,6 +1,4 @@
-#![feature(buf_read_has_data_left)]
-
-use clap::{Parser};
+use clap::Parser;
 
 mod region;
 mod commands;

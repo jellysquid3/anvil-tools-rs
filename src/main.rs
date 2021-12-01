@@ -20,7 +20,7 @@ fn main() {
 #[clap()]
 struct Opts {
     #[clap(subcommand)]
-    command: Command,
+    command: Command
 }
 
 #[derive(Parser)]
@@ -29,4 +29,3 @@ enum Command {
     Pack(commands::pack::PackOptions),
     Unpack(commands::pack::UnpackOptions)
 }
-

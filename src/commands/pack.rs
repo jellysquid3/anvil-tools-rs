@@ -1,11 +1,10 @@
 use std::fs::File;
+use atty::Stream;
 
 use serde::{Serialize, Deserialize};
-use xz2::bufread::XzDecoder;
-use xz2::write::XzEncoder;
 use std::fs;
 use std::path::Path;
-use std::io::{self, BufWriter, prelude::*, BufReader};
+use std::io::{self, BufWriter, BufReader};
 use clap::Parser;
 use indicatif::{ProgressBar, MultiProgress, ProgressStyle};
 
@@ -18,24 +17,6 @@ lazy_static! {
             .template("{msg} {wide_bar} {pos}/{len}")
             .progress_chars("##-")
     };
-}
-
-#[derive(Parser)]
-pub struct PackOptions {
-    #[clap(long, about = "Input directory of region (.mca) files to archive")]
-    input_dir: String,
-
-    #[clap(long, about = "Output path for the archive file")]
-    output_file: String,
-    
-    #[clap(long, default_value = "7", about = "Compression level used for creating the archive file")]
-    compression_level: u32,
-
-    #[clap(long, default_value = "0", about = "Number of threads to be used for compression (0 = single-threaded)")]
-    threads: u32,
-
-    #[clap(long, about = "Strip cached data from chunks before archiving")]
-    strip: bool
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,28 +38,58 @@ struct ChunkEntry {
     data: Box<[u8]>
 }
 
+#[derive(Parser)]
+pub struct PackOptions {
+    #[clap(long, about = "Input directory of region (.mca) files to archive")]
+    input_dir: String,
+
+    #[clap(long, about = "Output path for the archive file (default is pipe to stdout)", required = false)]
+    output_file: Option<String>,
+
+    #[clap(long, about = "Strip cached data from chunks before archiving")]
+    strip: bool
+}
+
 pub fn pack_files(options: &PackOptions) -> Result<(), io::Error> {
     let input_path = Path::new(&options.input_dir);
-    let output_path = Path::new(&options.output_file);
 
-    if !Path::exists(input_path) {
-        panic!("Input directory does not exist");
+    match &options.output_file {
+        Some(output_file) => {
+            let output_path = Path::new(output_file);
+
+            if !Path::exists(output_path) {
+                panic!("Output file does not exist");
+            }
+            
+            let file = File::create(output_path)?;
+            let mut file_write = BufWriter::new(file);
+    
+            pack_files_with_reader(&mut file_write, input_path, options)
+        },
+        None => {
+            if atty::is(Stream::Stdout) {
+                panic!("Refusing to pipe binary data to a terminal")
+            }
+
+            pack_files_with_reader(&mut io::stdout(), input_path, options)
+        }
     }
+}
 
-    let writer = BufWriter::new(File::create(output_path)?);
-    let mut encoder = XzEncoder::new(writer, options.compression_level);
-
-    let entries: Vec<fs::DirEntry> = fs::read_dir(input_path)?
+fn pack_files_with_reader<W>(writer: &mut W, input_dir: &Path, options: &PackOptions) -> Result<(), io::Error>
+    where W: io::Write
+{
+    let entries: Vec<fs::DirEntry> = fs::read_dir(input_dir)?
         .into_iter()
         .collect::<Result<Vec<_>, io::Error>>()?;
 
-    rmp_serde::encode::write(encoder.by_ref(), &PackHeader { region_count: entries.len() as u32 })
+    rmp_serde::encode::write(writer.by_ref(), &PackHeader { region_count: entries.len() as u32 })
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
 
     let progress = MultiProgress::new();
     let bar = ProgressBar::new(entries.len() as u64);
     bar.set_style(PROGRESS_STYLE.clone());
-    bar.set_message("Compressing regions");
+    bar.set_message("Solidifying regions");
 
     entries.iter()
         .map(|entry| {
@@ -87,21 +98,21 @@ pub fn pack_files(options: &PackOptions) -> Result<(), io::Error> {
             let path = entry.path();
 
             if path.is_file() {
-                pack_file(&path, &mut encoder, &progress, options)
+                pack_file(&path, writer.by_ref(), &progress, options)
             } else {
                 Ok(())
             }
         })
         .collect::<Result<(), io::Error>>()?;
 
-    encoder.finish()?;
+    writer.flush()?;
 
     bar.finish();
 
     Ok(())
 }
 
-fn pack_file<T>(path: &Path, encoder: &mut XzEncoder<T>, progress: &MultiProgress, options: &PackOptions) -> Result<(), io::Error>
+fn pack_file<T>(path: &Path, encoder: &mut T, progress: &MultiProgress, options: &PackOptions) -> Result<(), io::Error>
     where T: io::Write
 {
     let (x, z) = RegionFile::parse_name(&path.file_name().map(|f| f.to_string_lossy()).unwrap());
@@ -112,7 +123,7 @@ fn pack_file<T>(path: &Path, encoder: &mut XzEncoder<T>, progress: &MultiProgres
 
     let bar = progress.add(ProgressBar::new(1024));
     bar.set_style(PROGRESS_STYLE.clone());
-    bar.set_message(format!("Compressing chunks for region ({}, {})", x, z));
+    bar.set_message(format!("Solidifying chunks for region ({}, {})", x, z));
 
     for result in region.stream_chunks() {
         bar.inc(1);
@@ -143,8 +154,8 @@ fn pack_file<T>(path: &Path, encoder: &mut XzEncoder<T>, progress: &MultiProgres
 
 #[derive(Parser)]
 pub struct UnpackOptions {
-    #[clap(long, about = "Path of the archive file to unpack")]
-    input_file: String,
+    #[clap(long, about = "Path of the archive file to unpack (default is pipe from stdin)")]
+    input_file: Option<String>,
 
     #[clap(long, about = "Directory where the unpacked region files will be saved")]
     output_dir: String
@@ -152,26 +163,44 @@ pub struct UnpackOptions {
 
 
 pub fn unpack_files(options: &UnpackOptions) -> Result<(), io::Error> {
-    let input_path = Path::new(&options.input_file);
     let output_dir = Path::new(&options.output_dir);
 
-    if !Path::exists(input_path) {
-        panic!("Input directory does not exist");
+    match &options.input_file {
+        Some(input_path) => {
+            let input_path = Path::new(input_path);
+
+            if !Path::exists(input_path) {
+                panic!("Input directory does not exist");
+            }
+        
+            let file = File::open(input_path)?;
+    
+            unpack_files_with_reader(&mut BufReader::new(file), output_dir)
+        },
+        None => {
+            if atty::is(Stream::Stdin) {
+                panic!("Refusing to pipe binary data to a terminal")
+            }
+
+            unpack_files_with_reader(&mut io::stdin(), output_dir)
+        }
     }
+}
 
-    let mut reader = BufReader::new(File::open(input_path)?);
-    let mut decoder = XzDecoder::new(&mut reader);
-
-    let pack_header: PackHeader = rmp_serde::decode::from_read(decoder.by_ref())
+fn unpack_files_with_reader<R>(reader: &mut R, output_dir: &Path) -> Result<(), io::Error>
+    where R: io::Read
+{
+    let pack_header: PackHeader = rmp_serde::decode::from_read(reader.by_ref())
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
 
     let progress = MultiProgress::new();
+
     let bar = progress.add(ProgressBar::new(pack_header.region_count as u64));
     bar.set_style(PROGRESS_STYLE.clone());
-    bar.set_message("Decompressing regions");
+    bar.set_message("Liquifying regions");
 
     for _ in 0..pack_header.region_count {
-        unpack_file(&output_dir, &mut decoder, &progress)?;
+        unpack_file(&output_dir, reader.by_ref(), &progress)?;
         bar.inc(1);
     }
 
@@ -180,8 +209,8 @@ pub fn unpack_files(options: &UnpackOptions) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn unpack_file<T>(dir: &Path, decoder: &mut XzDecoder<T>, progress: &MultiProgress) -> Result<(), io::Error>
-    where T: io::BufRead
+fn unpack_file<R>(dir: &Path, decoder: &mut R, progress: &MultiProgress) -> Result<(), io::Error>
+    where R: io::Read
 {
     let region_entry: RegionEntry = rmp_serde::decode::from_read(decoder.by_ref())
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
@@ -191,7 +220,7 @@ fn unpack_file<T>(dir: &Path, decoder: &mut XzDecoder<T>, progress: &MultiProgre
 
     let bar = progress.add(ProgressBar::new(region_entry.chunk_count as u64));
     bar.set_style(PROGRESS_STYLE.clone());
-    bar.set_message(format!("Decompressing chunks for region ({}, {})", region_entry.x, region_entry.z));
+    bar.set_message(format!("Liquifying chunks for region ({}, {})", region_entry.x, region_entry.z));
 
     for _ in 0..region_entry.chunk_count {
         let chunk_entry: ChunkEntry = rmp_serde::decode::from_read(decoder.by_ref())

@@ -7,36 +7,14 @@ examination seems to suggest it at least works for my use case.
 A small collection of tools (well, really only *one* for now) to deal with Minecraft's Anvil chunk storage system while
 out of the game. Might be useful for server operators or people who do not want to wait on Minecraft's "world optimization..."
 
+## Features
+- Strip cached world data (similar to the "Optimize World" feature in vanilla)
+- Compress region files for long-term archival (2-3x improvement in compression ratio when compared to tarring the region directory)
+
 ## Usage
 
-Clone the repository and the submodules...
-```
-git clone --recursive https://github.com/jellysquid3/anvil-tools-rs
-```
-
-Build the project...
-
-```
-cargo build --release
-```
-
-Run the built binary...
-
-```
-./target/release/anvil-tools-rs ...
-```
-
-### Commands
-
-#### Strip cached data
-
-Strips any cached data from the region files within `<INPUT>` and rewrites them to `<OUTPUT>`.
-
-```
-anvil-tools-rs strip-cached-data <INPUT> <OUTPUT>
-```
-
-
+Use the `--help` argument for usage information.
+`
 ## Why?
 
 Minecraft's built-in tools have a few issues that occasionally bite me when debugging issues. In no particular order,

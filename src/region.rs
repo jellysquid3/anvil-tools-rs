@@ -11,6 +11,8 @@ use mapr::{Mmap, MmapMut};
 use flate2::write::{ZlibEncoder};
 use flate2::Compression;
 
+use serde::{Serialize, Deserialize};
+
 const ENTRY_COUNT: usize = 32 * 32;
 const ENTRY_LENGTH: usize = 4;
 
@@ -38,6 +40,18 @@ impl RegionFile {
 
     pub fn stream_chunks(&self) -> ChunkIterator {
         ChunkIterator::create(self)
+    }
+
+    pub fn chunk_count(&self) -> Result<u32, io::Error> {
+        let mut count = 0;
+
+        for index in 0..ENTRY_COUNT {
+            if self.read_entry(index)?.is_some() {
+                count += 1;
+            }
+        }
+
+        Ok(count)
     }
 
     fn get_chunk_from_index(&self, index: usize) -> Result<Option<Chunk>, io::Error> {
@@ -83,7 +97,7 @@ impl RegionFile {
         }?;
 
         Ok(Chunk {
-            data: data_decompressed,
+            data: data_decompressed.into_boxed_slice(),
             position: entry.position.clone()
         })
     }
@@ -114,6 +128,21 @@ impl RegionFile {
             sector_count
         }))
     }
+
+    pub fn parse_name(name: &str) -> (i32, i32) {
+        let mut values = name.split('.')
+            .skip(1);
+                    
+        let x = values.next()
+            .expect("Expected x-coordinate in file name")
+            .parse::<i32>()
+            .expect("Failed to parse x-coordinate");
+        let z = values.next()
+            .expect("Expected z-coordinate in file name")
+            .parse::<i32>()
+            .expect("Failed to parse z-coordinate");
+        (x, z)
+    } 
 }
 
 
@@ -253,17 +282,17 @@ impl CompressionMode {
 }
 
 pub struct Chunk {
-    pub data: Vec<u8>,
+    pub data: Box<[u8]>,
     pub position: ChunkPos
 }
 
 impl Chunk {
-    pub fn with_data(&self, data: Vec<u8>) -> Self {
+    pub fn with_data(&self, data: Box<[u8]>) -> Self {
         Chunk { data, position: self.position }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkPos {
     pub x: i32,
     pub z: i32

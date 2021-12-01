@@ -215,7 +215,7 @@ fn unpack_file<R>(dir: &Path, decoder: &mut R, progress: &MultiProgress) -> Resu
     let region_entry: RegionEntry = rmp_serde::decode::from_read(decoder.by_ref())
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
 
-    let region_path = dir.join(format!("f.{}.{}.mca", region_entry.x, region_entry.z));
+    let region_path = dir.join(format!("r.{}.{}.mca", region_entry.x, region_entry.z));
     let mut region = RegionFileWriter::create(&region_path)?;
 
     let bar = progress.add(ProgressBar::new(region_entry.chunk_count as u64));

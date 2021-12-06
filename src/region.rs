@@ -11,8 +11,6 @@ use mapr::{Mmap, MmapMut};
 use flate2::write::{ZlibEncoder};
 use flate2::Compression;
 
-use serde::{Serialize, Deserialize};
-
 const ENTRY_COUNT: usize = 32 * 32;
 const ENTRY_LENGTH: usize = 4;
 
@@ -40,18 +38,6 @@ impl RegionFile {
 
     pub fn stream_chunks(&self) -> ChunkIterator {
         ChunkIterator::create(self)
-    }
-
-    pub fn chunk_count(&self) -> Result<u32, io::Error> {
-        let mut count = 0;
-
-        for index in 0..ENTRY_COUNT {
-            if self.read_entry(index)?.is_some() {
-                count += 1;
-            }
-        }
-
-        Ok(count)
     }
 
     fn get_chunk_from_index(&self, index: usize) -> Result<Option<Chunk>, io::Error> {
@@ -129,7 +115,7 @@ impl RegionFile {
         }))
     }
 
-    pub fn parse_name(name: &str) -> (i32, i32) {
+    pub fn parse_name(name: &str) -> ChunkPos {
         let mut values = name.split('.')
             .skip(1);
                     
@@ -141,7 +127,7 @@ impl RegionFile {
             .expect("Expected z-coordinate in file name")
             .parse::<i32>()
             .expect("Failed to parse z-coordinate");
-        (x, z)
+        ChunkPos { x, z }
     } 
 }
 
@@ -281,6 +267,7 @@ impl CompressionMode {
     }
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     pub data: Box<[u8]>,
     pub position: ChunkPos
@@ -292,7 +279,7 @@ impl Chunk {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ChunkPos {
     pub x: i32,
     pub z: i32

@@ -14,7 +14,7 @@ out of the game. Might be useful for server operators or people who do not want 
 ## Usage
 
 Use the `--help` argument for usage information.
-`
+
 ## Why?
 
 Minecraft's built-in tools have a few issues that occasionally bite me when debugging issues. In no particular order,

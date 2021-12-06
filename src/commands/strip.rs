@@ -2,8 +2,6 @@ use clap::Parser;
 use std::path::Path;
 use std::fs;
 use std::io::{self, Cursor};
-use rayon::prelude::*;
-use indicatif::ProgressBar;
 
 use crate::region::{RegionFile, RegionFileWriter, Chunk};
 
@@ -33,34 +31,19 @@ pub fn strip_files(options: &Options) -> Result<(), io::Error> {
             .expect("Could not create output directory");
     }
 
-    let entries: Vec<fs::DirEntry> = fs::read_dir(input_path)?
-        .into_iter()
-        .collect::<Result<Vec<_>, io::Error>>()?;
-
-
-    let bar = ProgressBar::new((entries.len() as u64) * 1024);
-
-    entries
-        .par_iter()
-        .map(|entry| {
-            bar.inc(1);
-
-            let path = entry.path();
+    fs::read_dir(input_path)?
+        .try_for_each(|entry| {
+            let path = entry?.path();
 
             if path.is_file() {
-                strip_file(input_path, output_path, &path, &bar)
+                strip_file(input_path, output_path, &path)
             } else {
                 Ok(())
             }
         })
-        .collect::<Result<(), io::Error>>()?;
-
-    bar.finish();
-
-    Ok(())
 }
 
-fn strip_file(input_dir: &Path, output_dir: &Path, path: &Path, bar: &ProgressBar) -> Result<(), io::Error> {
+fn strip_file(input_dir: &Path, output_dir: &Path, path: &Path) -> Result<(), io::Error> {
     let name = path.file_name()
         .unwrap();
 
@@ -68,8 +51,6 @@ fn strip_file(input_dir: &Path, output_dir: &Path, path: &Path, bar: &ProgressBa
     let mut out_region = RegionFileWriter::create(&Path::join(output_dir, name))?;
 
     for result in in_region.stream_chunks() {
-        bar.inc(1);
-
         let chunk = match result? {
             Some(chunk) => chunk,
             None => continue
@@ -90,7 +71,7 @@ pub fn strip_chunk(chunk: &Chunk) -> Result<Chunk, io::Error> {
 
     let level_data = match level {
         Some(nbt::Value::Compound(map)) => map,
-        _ => panic!("Could not find Level tag in chunk NBT")
+        _ => return Ok(chunk.clone())
     };
 
     level_data.remove("Heightmaps");

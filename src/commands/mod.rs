@@ -1,2 +1,2 @@
-pub mod pack;
+pub mod archive;
 pub mod strip;

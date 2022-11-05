@@ -5,16 +5,13 @@ authors = ["jellysquid3 <jellysquid3@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
-flate2 = { version = "1.0", features = ["cloudflare_zlib"], default-features = false }
+flate2 = "1.0.24"
 mapr = "0.8"
 byteorder = "1.4"
-hematite-nbt = { version = "0.5", default-features = false }
-clap = { version = "3.0.0-beta.5" }
+fastnbt = "2.3"
+clap = { version = "4.0.19", features = [ "derive" ] }
 rayon = "1.5"
 atty = "0.2"
 tar = "0.4"
-lru = "0.7"
-indicatif = "0.16"
-
-[patch.crates-io]
-hematite-nbt = { path = './modules/hematite_nbt' }
+lru = "0.8"
+indicatif = "0.17"

@@ -3,28 +3,29 @@ use std::sync::{Arc, Mutex};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::io::{self, BufWriter, BufReader, Read};
+use std::num::NonZeroUsize;
 use clap::Parser;
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use indicatif::{ProgressBar, MultiProgress};
+use indicatif::{ProgressBar};
 
 use crate::region::{RegionFile, ChunkPos, RegionFileWriter, Chunk};
 use atty::Stream;
 
 #[derive(Parser)]
 pub struct PackOptions {
-    #[clap(long, about = "Input directory of region (.mca) files to archive")]
+    #[clap(long, help = "Input directory of region (.mca) files to archive")]
     input_dir: String,
 
-    #[clap(long, about = "Output path for the tar archive file (default is pipe to stdout)", required = false)]
+    #[clap(long, help = "Output path for the tar archive file (default is pipe to stdout)", required = false)]
     output_file: Option<String>,
 
-    #[clap(long, about = "Strip cached data from chunks before archiving")]
+    #[clap(long, help = "Strip cached data from chunks before archiving", default_value = "false")]
     strip: bool,
 
-    #[clap(long, about = "Threads used for reading region files")]
+    #[clap(long, help = "Threads used for reading region files")]
     threads: Option<u32>,
 
-    #[clap(long, about = "Allow binary data to be piped to a TTY")]
+    #[clap(long, help = "Allow binary data to be piped to a TTY")]
     ignore_tty: bool
 }
 
@@ -143,13 +144,13 @@ fn pack_region<W>(path: &Path, archive: &mut tar::Builder<W>, options: &PackOpti
 
 #[derive(Parser)]
 pub struct UnpackOptions {
-    #[clap(long, about = "Path of the archive file to unpack (default is pipe from stdin)")]
+    #[clap(long, help = "Path of the archive file to unpack (default is pipe from stdin)")]
     input_file: Option<String>,
 
-    #[clap(long, about = "Directory where the unpacked region files will be saved")]
+    #[clap(long, help = "Directory where the unpacked region files will be saved")]
     output_dir: String,
 
-    #[clap(long, about = "Allow binary data to be piped to a TTY")]
+    #[clap(long, help = "Allow binary data to be piped to a TTY")]
     ignore_tty: bool
 }
 
@@ -192,7 +193,7 @@ fn unpack_files_with_reader<R>(reader: &mut R, output_dir: &Path) -> Result<(), 
     let output_dir = output_dir.to_owned();
 
     let (sender, receiver) = std::sync::mpsc::sync_channel(4);
-    let region_cache: RegionFileCache = Arc::new(Mutex::new(LruCache::new(8)));
+    let region_cache: RegionFileCache = Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(8).unwrap())));
 
     let receive_thread = std::thread::spawn(move || -> Result<(), io::Error> {
         receiver

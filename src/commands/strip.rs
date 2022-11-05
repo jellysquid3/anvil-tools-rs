@@ -1,16 +1,17 @@
 use clap::Parser;
 use std::path::Path;
 use std::fs;
-use std::io::{self, Cursor};
+use std::io;
+use std::collections::HashMap;
 
 use crate::region::{RegionFile, RegionFileWriter, Chunk};
 
 #[derive(Parser)]
 pub struct Options {
-    #[clap(long, about = "Input directory of region (.mca) files to strip")]
+    #[clap(long, help = "Input directory of region (.mca) files to strip")]
     input_dir: String,
 
-    #[clap(long, about = "Output directory where stripped region files will be stored")]
+    #[clap(long, help = "Output directory where stripped region files will be stored")]
     output_dir: String
 }
 
@@ -65,20 +66,27 @@ fn strip_file(input_dir: &Path, output_dir: &Path, path: &Path) -> Result<(), io
 }
 
 pub fn strip_chunk(chunk: &Chunk) -> Result<Chunk, io::Error> {
-    let mut nbt: nbt::Blob = nbt::Blob::from_reader(&mut Cursor::new(&chunk.data[..]))?;
+    let mut nbt: fastnbt::Value = fastnbt::from_bytes(&chunk.data)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("Couldn't deserialize NBT: {}", err)))?;
 
-    let level = nbt.get_mut("Level");
+    if let fastnbt::Value::Compound(level) = &mut nbt {
+        level.remove("Heightmaps");
+        level.remove("isLightOn");
 
-    let level_data = match level {
-        Some(nbt::Value::Compound(map)) => map,
-        _ => return Ok(chunk.clone())
-    };
+        if let Some(fastnbt::Value::List(sections)) = level.get_mut("sections") {
+            for section in sections {
+                if let fastnbt::Value::Compound(section) = section {
+                    section.remove("SkyLight");
+                    section.remove("BlockLight");
+                }
+            }
+        }
+    }
 
-    level_data.remove("Heightmaps");
-    level_data.remove("isLightOn");
 
     let mut rewritten_data: Vec<u8> = Vec::new();
-    nbt.to_writer(&mut rewritten_data)?;
+    fastnbt::to_writer(&mut rewritten_data, &nbt)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("Couldn't serialize NBT: {}", err)))?;
 
     let rewritten_chunk = chunk.with_data(rewritten_data.into_boxed_slice());
 

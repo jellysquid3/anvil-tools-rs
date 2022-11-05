@@ -232,6 +232,8 @@ fn unpack_files_with_reader<R>(reader: &mut R, output_dir: &Path) -> Result<(), 
         }).unwrap();
     }
 
+    drop(sender);
+
     receive_thread.join()
         .unwrap()?;
 

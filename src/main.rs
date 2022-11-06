@@ -10,7 +10,7 @@ fn main() {
         Command::Pack(v) => commands::archive::pack_files(&v)
             .expect("Failed to pack files"),
         Command::Unpack(v) => commands::archive::unpack_files(&v)
-            .expect("Failed to strip files"),
+            .expect("Failed to unpack files"),
         Command::Strip(v) => commands::strip::strip_files(&v)
             .expect("Failed to strip files")
     }

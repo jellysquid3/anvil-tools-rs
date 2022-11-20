@@ -1,15 +1,15 @@
 use std::convert::TryInto;
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::{BufReader, SeekFrom};
 use std::io::prelude::*;
-use std::path::{Path};
+use std::io::{BufReader, SeekFrom};
+use std::path::Path;
 
 use byteorder::{BigEndian, ReadBytesExt};
 use flate2::read::{GzDecoder, ZlibDecoder};
-use mapr::{Mmap, MmapMut};
-use flate2::write::{ZlibEncoder};
+use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use mapr::{Mmap, MmapMut};
 
 const ENTRY_COUNT: usize = 32 * 32;
 const ENTRY_LENGTH: usize = 4;
@@ -22,16 +22,14 @@ const SECTOR_SIZE: usize = 4096;
 const INITIAL_CAPACITY: usize = HEADER_SIZE * 2;
 
 pub struct RegionFile {
-    map: Mmap
+    map: Mmap,
 }
 
 impl RegionFile {
     pub fn open(path: &Path) -> Result<Self, io::Error> {
         let file = File::open(path)?;
 
-        let map = unsafe {
-            Mmap::map(&file)
-        }?;
+        let map = unsafe { Mmap::map(&file) }?;
 
         Ok(RegionFile { map })
     }
@@ -44,9 +42,8 @@ impl RegionFile {
         let entry = self.read_entry(index)?;
 
         match entry {
-            Some(entry) => self.get_chunk_from_entry(entry)
-                .map(|chunk| Some(chunk)),
-            None => Ok(None)
+            Some(entry) => self.get_chunk_from_entry(entry).map(|chunk| Some(chunk)),
+            None => Ok(None),
         }
     }
 
@@ -54,37 +51,32 @@ impl RegionFile {
         let offset = entry.sector_index as usize * SECTOR_SIZE;
         let length = entry.sector_count as usize * SECTOR_SIZE;
 
-        let mut reader = BufReader::with_capacity(SECTOR_SIZE,
-                                                  &self.map[offset..(offset + length)]);
+        let mut reader =
+            BufReader::with_capacity(SECTOR_SIZE, &self.map[offset..(offset + length)]);
 
         let exact_length = reader.read_u32::<BigEndian>()?;
 
         let mut data_stream = reader.take(exact_length as u64);
 
         let compression_mode_int = data_stream.read_u8()?;
-        let compression_mode = CompressionMode::from_int(compression_mode_int)
-            .expect("Invalid compression type");
+        let compression_mode =
+            CompressionMode::from_int(compression_mode_int).expect("Invalid compression type");
 
         let mut data_decompressed: Vec<u8> = Vec::new();
 
         match compression_mode {
             CompressionMode::Gzip => {
-                GzDecoder::new(data_stream)
-                    .read_to_end(&mut data_decompressed)
-            },
+                GzDecoder::new(data_stream).read_to_end(&mut data_decompressed)
+            }
             CompressionMode::Zlib => {
-                ZlibDecoder::new(data_stream)
-                    .read_to_end(&mut data_decompressed)
+                ZlibDecoder::new(data_stream).read_to_end(&mut data_decompressed)
             }
-            CompressionMode::Uncompressed => {
-                data_stream
-                    .read_to_end(&mut data_decompressed)
-            }
+            CompressionMode::Uncompressed => data_stream.read_to_end(&mut data_decompressed),
         }?;
 
         Ok(Chunk {
             data: data_decompressed.into_boxed_slice(),
-            position: entry.position.clone()
+            position: entry.position.clone(),
         })
     }
 
@@ -105,38 +97,38 @@ impl RegionFile {
 
         let position = ChunkPos {
             x: (entry_index % 32) as i32,
-            z: (entry_index / 32) as i32
+            z: (entry_index / 32) as i32,
         };
 
         Ok(Some(RegionEntry {
             position,
             sector_index,
-            sector_count
+            sector_count,
         }))
     }
 
     pub fn parse_name(name: &str) -> ChunkPos {
-        let mut values = name.split('.')
-            .skip(1);
-                    
-        let x = values.next()
+        let mut values = name.split('.').skip(1);
+
+        let x = values
+            .next()
             .expect("Expected x-coordinate in file name")
             .parse::<i32>()
             .expect("Failed to parse x-coordinate");
-        let z = values.next()
+        let z = values
+            .next()
             .expect("Expected z-coordinate in file name")
             .parse::<i32>()
             .expect("Failed to parse z-coordinate");
         ChunkPos { x, z }
-    } 
+    }
 }
-
 
 pub struct RegionFileWriter {
     file: File,
     header_map: MmapMut,
     used_sectors: usize,
-    capacity: usize
+    capacity: usize,
 }
 
 impl RegionFileWriter {
@@ -152,15 +144,13 @@ impl RegionFileWriter {
 
         file.set_len(capacity as u64)?;
 
-        let map = unsafe {
-            MmapMut::map_mut(&file)
-        }?;
+        let map = unsafe { MmapMut::map_mut(&file) }?;
 
         Ok(RegionFileWriter {
             file,
             header_map: map,
             used_sectors: 2,
-            capacity
+            capacity,
         })
     }
 
@@ -174,7 +164,7 @@ impl RegionFileWriter {
         self.write_entry(RegionEntry {
             position: chunk.position,
             sector_index: sector_index as u32,
-            sector_count: sector_count as u32
+            sector_count: sector_count as u32,
         })?;
 
         self.used_sectors += sector_count as usize;
@@ -182,7 +172,12 @@ impl RegionFileWriter {
         Ok(())
     }
 
-    fn write_data(&mut self, sector_index: usize, sector_count: usize, data: &[u8]) -> Result<(), io::Error> {
+    fn write_data(
+        &mut self,
+        sector_index: usize,
+        sector_count: usize,
+        data: &[u8],
+    ) -> Result<(), io::Error> {
         let sector_offset = sector_index * SECTOR_SIZE;
         let capacity = (sector_index + sector_count) * SECTOR_SIZE;
 
@@ -235,17 +230,15 @@ impl RegionFileWriter {
 
 impl Drop for RegionFileWriter {
     fn drop(&mut self) {
-        self.header_map.flush()
-            .unwrap();
-        self.file.flush()
-            .unwrap();
+        self.header_map.flush().unwrap();
+        self.file.flush().unwrap();
     }
 }
 
 enum CompressionMode {
     Gzip,
     Zlib,
-    Uncompressed
+    Uncompressed,
 }
 
 impl CompressionMode {
@@ -254,7 +247,7 @@ impl CompressionMode {
             1 => Some(CompressionMode::Gzip),
             2 => Some(CompressionMode::Zlib),
             3 => Some(CompressionMode::Uncompressed),
-            _ => None
+            _ => None,
         }
     }
 
@@ -262,7 +255,7 @@ impl CompressionMode {
         match self {
             CompressionMode::Gzip => 1,
             CompressionMode::Zlib => 2,
-            CompressionMode::Uncompressed => 3
+            CompressionMode::Uncompressed => 3,
         }
     }
 }
@@ -270,31 +263,34 @@ impl CompressionMode {
 #[derive(Clone)]
 pub struct Chunk {
     pub data: Box<[u8]>,
-    pub position: ChunkPos
+    pub position: ChunkPos,
 }
 
 impl Chunk {
     pub fn with_data(&self, data: Box<[u8]>) -> Self {
-        Chunk { data, position: self.position }
+        Chunk {
+            data,
+            position: self.position,
+        }
     }
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ChunkPos {
     pub x: i32,
-    pub z: i32
+    pub z: i32,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct RegionEntry {
     position: ChunkPos,
     sector_index: u32,
-    sector_count: u32
+    sector_count: u32,
 }
 
 pub struct ChunkIterator<'a> {
     region: &'a RegionFile,
-    index: usize
+    index: usize,
 }
 
 impl<'a> ChunkIterator<'a> {
